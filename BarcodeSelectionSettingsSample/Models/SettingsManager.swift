@@ -20,13 +20,13 @@ class SettingsManager {
     var context: DataCaptureContext
     var barcodeSelectionSettings: BarcodeSelectionSettings
     var barcodeSelection: BarcodeSelection
-    var captureView: DataCaptureView! {
+    var captureView: DataCaptureView! /*{
         didSet {
             overlay = BarcodeSelectionBasicOverlay(barcodeSelection: barcodeSelection,
                                                    view: captureView,
                                                    style: overlayStyle)
         }
-    }
+    } */
 
     var overlay: BarcodeSelectionBasicOverlay!
 

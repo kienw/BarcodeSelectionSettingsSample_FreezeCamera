@@ -31,30 +31,30 @@ class ScanViewController: UIViewController {
         return SettingsManager.current.camera
     }
 
-    private var barcodeSelection: BarcodeSelection {
-        return SettingsManager.current.barcodeSelection
-    }
-
     private var captureView: DataCaptureView!
-    private var overlay: BarcodeSelectionBasicOverlay!
-    private var resultLabel: UILabel!
-    private var timer: Timer?
+    
+    private var barcodeTracking: BarcodeTracking!
+    private var barcodeSelection: BarcodeSelection!
+    private var barcodeTrackingOverlay: BarcodeTrackingBasicOverlay!
+    private var barcodeSelectionOverlay: BarcodeSelectionBasicOverlay!
+
+    @IBOutlet weak var freezeButton: UIButton!
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupRecognition()
-        setupResultLabel()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
+        barcodeTracking.isEnabled = true
         // Switch camera on to start streaming frames. The camera is started asynchronously and will take some time to
         // completely turn on.
-        barcodeSelection.isEnabled = true
         camera?.switch(toDesiredState: .on)
-        // When returning from the settings screen, update overlay accordingly.
-        SettingsManager.current.createAndSetupBarcodeSelectionBasicOverlay()
+        
+        // Use barcode tracking overlay as the default overlay.
+        captureView.addOverlay(barcodeTrackingOverlay)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -62,6 +62,7 @@ class ScanViewController: UIViewController {
 
         // Switch camera off to stop streaming frames.
         barcodeSelection.isEnabled = false
+        barcodeTracking.isEnabled = false
         camera?.switch(toDesiredState: .off)
     }
 
@@ -69,11 +70,58 @@ class ScanViewController: UIViewController {
         // It is good practice to properly disable the mode.
         barcodeSelection.isEnabled = false
         barcodeSelection.removeListener(self)
+        
+        barcodeTracking.isEnabled = false
+        barcodeTracking.removeListener(self)
     }
-
+    
+    @IBAction func freezeButtonTapped(_ sender: UIButton) {
+        sender.isSelected.toggle()
+        if sender.isSelected {
+            // Barcode selection mode
+            
+            barcodeSelection.addListener(self)
+            barcodeSelection.isEnabled = true
+            
+            captureView.removeOverlay(barcodeTrackingOverlay)
+            captureView.addOverlay(barcodeSelectionOverlay)
+            
+            // Select the unselected barcodes and freeze the camera
+            barcodeSelection.freezeCamera()
+            barcodeSelection.selectUnselectedBarcodes()
+        } else {
+            // Barcode tracking mode
+            
+            barcodeTracking.isEnabled = true
+            barcodeSelection.reset()
+            barcodeSelection.removeListener(self)
+            
+            captureView.removeOverlay(barcodeSelectionOverlay)
+            captureView.addOverlay(barcodeTrackingOverlay)
+        }
+    }
+    
     private func setupRecognition() {
-        // Register self as a listener to get informed whenever a new barcode is selected/unselected.
-        barcodeSelection.addListener(self)
+        let barcodeTrackingSettings = BarcodeTrackingSettings(scenario: .a)
+        barcodeTrackingSettings.set(symbology: .qr, enabled: true)
+        
+        barcodeTracking = BarcodeTracking(context: context, settings: barcodeTrackingSettings)
+        barcodeTracking.addListener(self)
+        
+        let barcodeSelectionSettings = BarcodeSelectionSettings()
+        barcodeSelectionSettings.set(symbology: .qr, enabled: true)
+        if barcodeSelectionSettings.selectionType is BarcodeSelectionTapSelection {
+            let tapSelection: BarcodeSelectionTapSelection = barcodeSelectionSettings.selectionType as! BarcodeSelectionTapSelection
+            tapSelection.shouldFreezeOnDoubleTap = false
+        }
+        
+        barcodeSelection = BarcodeSelection(context: context, settings: barcodeSelectionSettings)
+        
+        barcodeTrackingOverlay = BarcodeTrackingBasicOverlay(barcodeTracking: barcodeTracking)
+        barcodeTrackingOverlay.delegate = self
+        
+        barcodeSelectionOverlay = BarcodeSelectionBasicOverlay(barcodeSelection: barcodeSelection, style: .frame)
+        barcodeSelectionOverlay.shouldShowHints = false
 
         // To visualize the on-going barcode selection process on screen, setup a data capture view that renders the
         // camera preview. The view must be connected to the data capture context.
@@ -83,51 +131,6 @@ class ScanViewController: UIViewController {
         captureView.zoomGesture = nil
         view.addSubview(captureView)
         view.sendSubviewToBack(captureView)
-        SettingsManager.current.captureView = captureView
-    }
-
-    private func setupResultLabel() {
-        resultLabel = UILabel()
-        resultLabel.backgroundColor = UIColor(white: 0, alpha: 0.8)
-        resultLabel.textColor = .white
-        resultLabel.numberOfLines = 0
-        resultLabel.textAlignment = .center
-        resultLabel.font = UIFont.preferredFont(forTextStyle: .body)
-        resultLabel.translatesAutoresizingMaskIntoConstraints = false
-        resultLabel.layer.cornerRadius = 3
-        view.addSubview(resultLabel)
-        view.addConstraints([
-            resultLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            resultLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            resultLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8)
-        ])
-    }
-
-    private func updateResult(results: [Result]) {
-        var string = ""
-        for i in 0..<results.count {
-            let result = results[i]
-            string += "\(result.data)\nSymbology: \(result.symbology.description)\nCount: \(result.count)"
-            if i < results.count - 1 {
-                string += "\n\n"
-            }
-        }
-        DispatchQueue.main.async {
-            self.resultLabel.alpha = 1
-            self.resultLabel.text = string
-            self.timer?.invalidate()
-            self.timer = Timer.scheduledTimer(timeInterval: 0.5,
-                                              target: self,
-                                              selector: #selector(self.hideResult),
-                                              userInfo: nil,
-                                              repeats: false)
-        }
-    }
-
-    @objc private func hideResult() {
-        UIView.animate(withDuration: 0.3) {
-            self.resultLabel.alpha = 0
-        }
     }
 }
 
@@ -135,13 +138,31 @@ extension ScanViewController: BarcodeSelectionListener {
     func barcodeSelection(_ barcodeSelection: BarcodeSelection,
                           didUpdateSelection session: BarcodeSelectionSession,
                           frameData: FrameData?) {
-        let results = session.newlySelectedBarcodes.map {
-            Result(data: $0.data ?? "[binary result]",
-                   symbology: $0.symbology,
-                   count: session.count(for: $0))
-        }
-        if results.count > 0 {
-            updateResult(results: results)
-        }
+    }
+    
+    func barcodeSelection(_ barcodeSelection: BarcodeSelection, didUpdate session: BarcodeSelectionSession, frameData: FrameData?) {
+//        if frameData != nil {
+//            barcodeSelection.freezeCamera()
+//            barcodeSelection.selectUnselectedBarcodes()
+//        }
+    }
+    
+    func didStartObserving(_ barcodeSelection: BarcodeSelection) {
+//        barcodeSelection.freezeCamera()
+//        barcodeSelection.selectUnselectedBarcodes()
+    }
+}
+
+extension ScanViewController: BarcodeTrackingListener {
+    func barcodeTracking(_ barcodeTracking: BarcodeTracking, didUpdate session: BarcodeTrackingSession, frameData: FrameData) {
+    }
+}
+
+extension ScanViewController: BarcodeTrackingBasicOverlayDelegate {
+    func barcodeTrackingBasicOverlay(_ overlay: BarcodeTrackingBasicOverlay, brushFor trackedBarcode: TrackedBarcode) -> Brush? {
+        return Brush(fill: .green, stroke: .green, strokeWidth: 1.0)
+    }
+    
+    func barcodeTrackingBasicOverlay(_ overlay: BarcodeTrackingBasicOverlay, didTap trackedBarcode: TrackedBarcode) {
     }
 }
