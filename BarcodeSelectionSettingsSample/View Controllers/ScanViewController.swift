@@ -87,8 +87,8 @@ class ScanViewController: UIViewController {
             captureView.addOverlay(barcodeSelectionOverlay)
             
             // Select the unselected barcodes and freeze the camera
-            barcodeSelection.freezeCamera()
-            barcodeSelection.selectUnselectedBarcodes()
+//            barcodeSelection.freezeCamera()
+//            barcodeSelection.selectUnselectedBarcodes()
         } else {
             // Barcode tracking mode
             
@@ -148,8 +148,8 @@ extension ScanViewController: BarcodeSelectionListener {
     }
     
     func didStartObserving(_ barcodeSelection: BarcodeSelection) {
-//        barcodeSelection.freezeCamera()
-//        barcodeSelection.selectUnselectedBarcodes()
+        barcodeSelection.freezeCamera()
+        barcodeSelection.selectUnselectedBarcodes()
     }
 }
 
