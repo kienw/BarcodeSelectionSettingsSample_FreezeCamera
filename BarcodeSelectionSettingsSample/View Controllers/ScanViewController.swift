@@ -141,15 +141,15 @@ extension ScanViewController: BarcodeSelectionListener {
     }
     
     func barcodeSelection(_ barcodeSelection: BarcodeSelection, didUpdate session: BarcodeSelectionSession, frameData: FrameData?) {
-//        if frameData != nil {
-//            barcodeSelection.freezeCamera()
-//            barcodeSelection.selectUnselectedBarcodes()
-//        }
+        if frameData != nil {
+            barcodeSelection.freezeCamera()
+            barcodeSelection.selectUnselectedBarcodes()
+        }
     }
     
     func didStartObserving(_ barcodeSelection: BarcodeSelection) {
-        barcodeSelection.freezeCamera()
-        barcodeSelection.selectUnselectedBarcodes()
+//        barcodeSelection.freezeCamera()
+//        barcodeSelection.selectUnselectedBarcodes()
     }
 }
 
